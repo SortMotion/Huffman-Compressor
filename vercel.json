@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/api/gutendex/:path*", "destination": "https://gutendex.com/:path*" },
+    { "source": "/api/pg/:path*", "destination": "https://<MIRROR_HOST>/:path*" }
+  ]
+}
