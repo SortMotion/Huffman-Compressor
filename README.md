@@ -22,4 +22,7 @@ Sigue estos pasos para levantar el entorno de desarrollo en tu máquina:
 **1. Clona el repositorio**
 ```bash
 git clone [https://github.com/SortMotion/Huffman-Compressor.git](https://github.com/SortMotion/Huffman-Compressor.git)
+
 cd Huffman-Compressor
+
+nvm use && npm ci
