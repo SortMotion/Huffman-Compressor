@@ -28,6 +28,20 @@ describe('pickTextUrl', () => {
     ).toBe('https://www.gutenberg.org/files/1/1-0.txt');
   });
 
+  it('descarta archivos readme (caso real del libro 26301)', () => {
+    expect(
+      pickTextUrl({
+        'text/plain; charset=us-ascii': 'https://www.gutenberg.org/files/26301/26301-readme.txt',
+      })
+    ).toBeUndefined();
+    expect(
+      pickTextUrl({
+        'text/plain; charset=utf-8': 'https://www.gutenberg.org/files/9/README.txt',
+        'text/plain; charset=us-ascii': 'https://www.gutenberg.org/files/9/9.txt',
+      })
+    ).toBe('https://www.gutenberg.org/files/9/9.txt');
+  });
+
   it('descarta zips y formatos que no son texto plano', () => {
     expect(
       pickTextUrl({

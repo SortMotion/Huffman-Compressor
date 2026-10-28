@@ -28,16 +28,23 @@ export function toSourceError(err: unknown): SourceError {
 }
 
 /**
- * Elige la URL de texto plano de un libro: prefiere UTF-8, descarta .zip y
- * cualquier formato que no sea text/plain. `undefined` si no hay texto utilizable.
+ * Elige la URL de texto plano de un libro: prefiere UTF-8, descarta .zip, archivos
+ * readme (algunos libros solo exponen su readme como text/plain) y cualquier formato
+ * que no sea text/plain. `undefined` si no hay texto utilizable.
  */
 export function pickTextUrl(formats: Record<string, string> | undefined): string | undefined {
   if (!formats) return undefined;
   const candidates = Object.entries(formats).filter(
-    ([mime, url]) => mime.startsWith('text/plain') && !/\.zip(\?|$)/i.test(url)
+    ([mime, url]) => mime.startsWith('text/plain') && !/\.zip(\?|$)/i.test(url) && !isReadme(url)
   );
   const utf8 = candidates.find(([mime]) => /utf-?8/i.test(mime));
   return (utf8 ?? candidates[0])?.[1];
+}
+
+/** `true` si el nombre del archivo es un readme (p. ej. `26301-readme.txt`). */
+function isReadme(url: string): boolean {
+  const fileName = url.split(/[?#]/)[0].split('/').pop() ?? '';
+  return /readme/i.test(fileName);
 }
 
 export async function searchBooks(query: string, signal?: AbortSignal): Promise<SearchResult> {
