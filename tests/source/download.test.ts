@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { downloadText, toProxyUrl } from '../../src/source/download';
+import { canonicalTextUrl, downloadText, toProxyUrl } from '../../src/source/download';
 import { MAX_INPUT_BYTES } from '../../src/contracts/constants';
 import { SourceError } from '../../src/contracts/errors';
 
@@ -30,7 +30,9 @@ async function expectSourceError(promise: Promise<unknown>, code: string) {
 describe('toProxyUrl', () => {
   it('reescribe URLs de gutenberg.org hacia /api/pg', () => {
     expect(toProxyUrl(BOOK_URL)).toBe('/api/pg/ebooks/1342.txt.utf-8');
-    expect(toProxyUrl('https://gutenberg.org/files/1/1-0.txt?x=1')).toBe('/api/pg/files/1/1-0.txt?x=1');
+    expect(toProxyUrl('https://gutenberg.org/files/1/1-0.txt?x=1')).toBe(
+      '/api/pg/files/1/1-0.txt?x=1'
+    );
   });
 
   it('rechaza hosts ajenos y URLs inválidas', () => {
@@ -45,7 +47,9 @@ describe('downloadText', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(
-        streamResponse([new Uint8Array([1, 2, 3]), new Uint8Array([4, 5])], { 'content-length': '5' })
+        streamResponse([new Uint8Array([1, 2, 3]), new Uint8Array([4, 5])], {
+          'content-length': '5',
+        })
       );
     vi.stubGlobal('fetch', fetchMock);
     const onProgress = vi.fn();
@@ -117,5 +121,119 @@ describe('downloadText', () => {
     });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 200 })));
     await expectSourceError(downloadText(BOOK_URL), 'ABORTED');
+  });
+});
+
+const redirect = (location: string | null, status = 302) =>
+  new Response(null, { status, headers: location ? { location } : {} });
+
+/** Lo que entrega el navegador con `redirect: 'manual'`: sin estado ni Location legibles. */
+const opaqueRedirect = () =>
+  ({
+    type: 'opaqueredirect',
+    status: 0,
+    ok: false,
+    headers: new Headers(),
+    body: null,
+  }) as Response;
+
+describe('canonicalTextUrl', () => {
+  it('deriva /cache/epub/{id}/pg{id}.txt de las rutas conocidas', () => {
+    for (const path of ['/ebooks/1342.txt.utf-8', '/ebooks/1342', '/files/1342/1342-0.txt']) {
+      expect(canonicalTextUrl(new URL(path, 'https://www.gutenberg.org'))?.pathname).toBe(
+        '/cache/epub/1342/pg1342.txt'
+      );
+    }
+    expect(canonicalTextUrl(new URL('https://www.gutenberg.org/about/'))).toBeNull();
+  });
+});
+
+describe('downloadText: proxy y redirecciones', () => {
+  it('pide sin seguir redirecciones automáticamente', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(streamResponse([new Uint8Array([1])]));
+    vi.stubGlobal('fetch', fetchMock);
+    await downloadText(BOOK_URL);
+    expect(fetchMock.mock.calls[0][1].redirect).toBe('manual');
+  });
+
+  it('sigue una redirección absoluta del mirror a través del proxy', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(redirect('https://www.gutenberg.org/cache/epub/1342/pg1342.txt'))
+      .mockResolvedValueOnce(streamResponse([new Uint8Array([7, 8])]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const data = await downloadText(BOOK_URL);
+
+    expect(Array.from(data)).toEqual([7, 8]);
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+      '/api/pg/ebooks/1342.txt.utf-8',
+      '/api/pg/cache/epub/1342/pg1342.txt',
+    ]);
+  });
+
+  it('resuelve redirecciones relativas contra la URL del mirror', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(redirect('/cache/epub/1342/pg1342.txt', 301))
+      .mockResolvedValueOnce(streamResponse([new Uint8Array([1])]));
+    vi.stubGlobal('fetch', fetchMock);
+    await downloadText(BOOK_URL);
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/pg/cache/epub/1342/pg1342.txt');
+  });
+
+  it('usa la ruta canónica si el navegador oculta el destino (opaqueredirect)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(opaqueRedirect())
+      .mockResolvedValueOnce(streamResponse([new Uint8Array([3])]));
+    vi.stubGlobal('fetch', fetchMock);
+    const data = await downloadText(BOOK_URL);
+    expect(Array.from(data)).toEqual([3]);
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/pg/cache/epub/1342/pg1342.txt');
+  });
+
+  it('HTTP si la ruta canónica también redirige sin destino', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(opaqueRedirect()));
+    await expectSourceError(downloadText(BOOK_URL), 'HTTP');
+  });
+
+  it('HTTP si el mirror redirige a un host ajeno', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(redirect('https://evil.example/x.txt')));
+    await expectSourceError(downloadText(BOOK_URL), 'HTTP');
+  });
+
+  it('HTTP tras demasiadas redirecciones', async () => {
+    let n = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => redirect(`https://www.gutenberg.org/r/${n++}`))
+    );
+    await expectSourceError(downloadText(BOOK_URL), 'HTTP');
+  });
+
+  it('HTTP si el proxy devuelve HTML (rewrite inactivo)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('<!doctype html><html></html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        })
+      )
+    );
+    await expectSourceError(downloadText(BOOK_URL), 'HTTP');
+  });
+
+  it('acepta text/plain del mirror', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          streamResponse([new Uint8Array([65])], { 'content-type': 'text/plain; charset=utf-8' })
+        )
+    );
+    expect(Array.from(await downloadText(BOOK_URL))).toEqual([65]);
   });
 });

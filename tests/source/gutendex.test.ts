@@ -41,9 +41,9 @@ describe('pickTextUrl', () => {
 
 describe('searchBooks', () => {
   it('consulta el rewrite de Vercel filtrando por texto plano', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse({ count: 0, next: null, previous: null, results: [] })
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ count: 0, next: null, previous: null, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
     const controller = new AbortController();
 
@@ -67,9 +67,16 @@ describe('searchBooks', () => {
               id: 1342,
               title: 'Pride and Prejudice',
               authors: [{ name: 'Austen, Jane' }],
-              formats: { 'text/plain; charset=utf-8': 'https://www.gutenberg.org/ebooks/1342.txt.utf-8' },
+              formats: {
+                'text/plain; charset=utf-8': 'https://www.gutenberg.org/ebooks/1342.txt.utf-8',
+              },
             },
-            { id: 2, title: 'Solo HTML', authors: [], formats: { 'text/html': 'https://x/2.html' } },
+            {
+              id: 2,
+              title: 'Solo HTML',
+              authors: [],
+              formats: { 'text/html': 'https://x/2.html' },
+            },
           ],
         })
       )
@@ -111,5 +118,23 @@ describe('searchBooks', () => {
     const abort = Object.assign(new Error('aborted'), { name: 'AbortError' });
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abort));
     await expectSourceError(searchBooks('x'), 'ABORTED');
+  });
+
+  it('HTTP si el proxy devuelve HTML (rewrite inactivo)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('<!doctype html><html></html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        })
+      )
+    );
+    await expectSourceError(searchBooks('x'), 'HTTP');
+  });
+
+  it('HTTP si el JSON no tiene la forma de Gutendex', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail: 'Not found' })));
+    await expectSourceError(searchBooks('x'), 'HTTP');
   });
 });

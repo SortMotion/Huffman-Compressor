@@ -56,6 +56,13 @@ export async function searchBooks(query: string, signal?: AbortSignal): Promise<
   if (!response.ok) {
     throw new SourceError('HTTP', `Gutendex respondió con el estado ${response.status}`);
   }
+  // Si el rewrite no está activo, el servidor suele devolver index.html (fallback de la SPA).
+  if (!/json/i.test(response.headers.get('content-type') ?? '')) {
+    throw new SourceError(
+      'HTTP',
+      `El proxy ${GUTENDEX_BASE} no devolvió JSON; revisa el rewrite en vercel.json`
+    );
+  }
 
   let body: GutendexResponse;
   try {
@@ -66,9 +73,12 @@ export async function searchBooks(query: string, signal?: AbortSignal): Promise<
       ? converted
       : new SourceError('HTTP', 'Respuesta de Gutendex no válida');
   }
+  if (!isGutendexResponse(body)) {
+    throw new SourceError('HTTP', 'Respuesta de Gutendex con formato inesperado');
+  }
 
   const results: BookSummary[] = [];
-  for (const book of body.results ?? []) {
+  for (const book of body.results) {
     const downloadUrl = pickTextUrl(book.formats);
     if (!downloadUrl) continue;
     results.push({
@@ -81,8 +91,15 @@ export async function searchBooks(query: string, signal?: AbortSignal): Promise<
 
   return {
     results,
-    count: body.count ?? results.length,
+    count: body.count,
     next: body.next ?? null,
     previous: body.previous ?? null,
   };
+}
+
+function isGutendexResponse(value: unknown): value is GutendexResponse {
+  const v = value as Partial<GutendexResponse> | null;
+  return (
+    typeof v === 'object' && v !== null && typeof v.count === 'number' && Array.isArray(v.results)
+  );
 }
