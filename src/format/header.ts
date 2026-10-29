@@ -23,7 +23,7 @@ import type { CanonicalLengths, FileHeader } from '../contracts/types';
  *  20  nameLength     u8
  *  21  originalName   nameLength bytes (UTF-8)
  *  ..  tabla          symbolCount pares (byte, longitud), ordenados por byte
- *  ..  datos          ceil(totalBits / 8) bytes
+ *  ..  datos          ceil(totalBits / 8) bytes; los bits de relleno del último byte en 0
  */
 const OFFSET_VERSION = 4;
 const OFFSET_RESERVED = 5;
@@ -186,6 +186,10 @@ export function parseHeader(file: Uint8Array): ParsedHeader {
   if (file.length > expectedLength) {
     throw new FormatError('INCONSISTENT', 'Hay bytes sobrantes tras los datos codificados');
   }
+  const paddingBits = (8 - (totalBits % 8)) % 8;
+  if (paddingBits > 0 && (file[expectedLength - 1] & ((1 << paddingBits) - 1)) !== 0) {
+    throw new FormatError('INCONSISTENT', 'Los bits de relleno del último byte deben ser 0');
+  }
 
   return {
     header: { version, originalSize, symbolCount, totalBits, crc32Hex, originalName },
@@ -222,6 +226,9 @@ function assertConsistentCounts(
   }
   if (symbolCount === 0) {
     throw new FormatError('INCONSISTENT', 'Hay datos pero la tabla de símbolos está vacía');
+  }
+  if (symbolCount > originalSize) {
+    throw new FormatError('INCONSISTENT', 'Hay más símbolos distintos que bytes originales');
   }
   if (totalBits < originalSize || totalBits > originalSize * MAX_CODE_LENGTH) {
     throw new FormatError('INCONSISTENT', 'totalBits es incompatible con el tamaño original');

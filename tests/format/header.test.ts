@@ -148,6 +148,29 @@ describe('parseHeader', () => {
     expectFormatError(() => parseHeader(bad), 'INCONSISTENT');
   });
 
+  it('INCONSISTENT: más símbolos que bytes originales', () => {
+    const bad = example1.compressedBytes.slice();
+    bad[9] = 4; // originalSize = 4 con 5 símbolos (totalBits 23 sigue en rango)
+    expectFormatError(() => parseHeader(bad), 'INCONSISTENT');
+    const header = { ...headerOf(example1), originalSize: 4 };
+    expectFormatError(() => serializeHeader(header, example1.lengths), 'INCONSISTENT');
+  });
+
+  it('INCONSISTENT: bits de relleno distintos de 0', () => {
+    const four = example2.compressedBytes.slice(); // totalBits = 4, último byte 0x00
+    four[four.length - 1] = 0x0f;
+    expectFormatError(() => parseHeader(four), 'INCONSISTENT');
+    const seven = example1.compressedBytes.slice(); // totalBits = 23, último byte 0x68
+    seven[seven.length - 1] |= 0x01;
+    expectFormatError(() => parseHeader(seven), 'INCONSISTENT');
+  });
+
+  it('acepta bits de datos en las posiciones válidas del último byte', () => {
+    const ok = example2.compressedBytes.slice();
+    ok[ok.length - 1] = 0xf0; // los 4 bits altos son datos, el relleno sigue en 0
+    expect(parseHeader(ok).header.totalBits).toBe(4);
+  });
+
   it('TOO_LARGE: originalSize mayor a 20 MiB', () => {
     const bad = example1.compressedBytes.slice();
     bad[6] = 0x7f;
