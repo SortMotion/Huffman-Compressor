@@ -1,7 +1,20 @@
     export class BitWriter {
-    private bytes: number[] = [];
+    private buffer: Uint8Array;
+    private byteOffset = 0;
     private currentByte = 0;
     private bitCount = 0;
+
+    constructor(initialCapacity = 65536) {
+        this.buffer = new Uint8Array(initialCapacity);
+    }
+
+    private ensureCapacity(): void {
+        if (this.byteOffset >= this.buffer.length) {
+        const newBuffer = new Uint8Array(this.buffer.length * 2);
+        newBuffer.set(this.buffer);
+        this.buffer = newBuffer;
+        }
+    }
 
     public writeBits(value: number, nBits: number): void {
         if (nBits <= 0 || nBits > 31) {
@@ -14,7 +27,8 @@
         this.bitCount++;
 
         if (this.bitCount === 8) {
-            this.bytes.push(this.currentByte);
+            this.ensureCapacity();
+            this.buffer[this.byteOffset++] = this.currentByte;
             this.currentByte = 0;
             this.bitCount = 0;
         }
@@ -24,11 +38,12 @@
     public flush(): Uint8Array {
         if (this.bitCount > 0) {
         this.currentByte <<= (8 - this.bitCount);
-        this.bytes.push(this.currentByte);
+        this.ensureCapacity();
+        this.buffer[this.byteOffset++] = this.currentByte;
         this.currentByte = 0;
         this.bitCount = 0;
         }
-        return new Uint8Array(this.bytes);
+        return this.buffer.subarray(0, this.byteOffset);
     }
     }
 
