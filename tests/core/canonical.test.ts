@@ -13,7 +13,7 @@
 
     it('debe manejar correctamente el caso de borde de 1 solo símbolo', () => {
         const frequencies = new Uint32Array(256);
-        frequencies[65] = 10; // Solo el byte 65 ('A')
+        frequencies[65] = 10;
 
         const result = generateCanonicalCodes(frequencies);
 
@@ -23,9 +23,9 @@
 
     it('debe generar códigos canónicos válidos cumpliendo la desigualdad de Kraft y límite de 15 bits', () => {
         const frequencies = new Uint32Array(256);
-        frequencies[97] = 5;  // 'a'
-        frequencies[98] = 3;  // 'b'
-        frequencies[99] = 1;  // 'c'
+        frequencies[97] = 5;
+        frequencies[98] = 3;
+        frequencies[99] = 1;
 
         const result = generateCanonicalCodes(frequencies);
 
@@ -57,5 +57,31 @@
 
         expect(result1.lengths).toEqual(result2.lengths);
         expect(result1.codes).toEqual(result2.codes);
+    });
+
+    it('debe limitar correctamente árboles con profundidad natural mayor a 15 niveles usando frecuencias tipo Fibonacci', () => {
+        const frequencies = new Uint32Array(256);
+        let a = 1;
+        let b = 1;
+        
+        for (let i = 0; i < 256; i++) {
+        frequencies[i] = a;
+        const next = a + b;
+        a = b;
+        b = next;
+        }
+
+        const result = generateCanonicalCodes(frequencies);
+
+        let kraftSum = 0;
+        for (let i = 0; i < 256; i++) {
+        if (frequencies[i] > 0) {
+            expect(result.lengths[i]).toBeGreaterThan(0);
+            expect(result.lengths[i]).toBeLessThanOrEqual(15);
+            kraftSum += Math.pow(2, -result.lengths[i]);
+        }
+        }
+
+        expect(kraftSum).toBeLessThanOrEqual(1.00001);
     });
     });

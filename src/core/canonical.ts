@@ -85,9 +85,10 @@
     }
     computeDepths(root, 0);
 
-    const symbolEntries = Array.from(rawLengths.entries()).map(([symbol, len]) => ({
+    // Pasar la longitud real devuelta por el árbol (sin Math.min previo)
+    const symbolEntries = Array.from(rawLengths.entries()).map(([symbol, length]) => ({
         symbol,
-        length: Math.min(len, 15),
+        length,
     }));
 
     packageLimitLengths(symbolEntries, 15);
@@ -125,29 +126,33 @@
     }
 
     function packageLimitLengths(entries: { symbol: number; length: number }[], maxBits: number) {
-    entries.sort((a, b) => b.length - a.length);
-    
-    let excess = 0;
     for (const entry of entries) {
         if (entry.length > maxBits) {
-        excess += entry.length - maxBits;
         entry.length = maxBits;
         }
     }
 
-    if (excess > 0) {
-        entries.sort((a, b) => a.length - b.length);
-        while (excess > 0) {
-        let adjusted = false;
+    let kraftSum = entries.reduce((sum, entry) => sum + Math.pow(2, -entry.length), 0);
+
+    while (kraftSum > 1.0) {
+        let maxCurrentLength = -1;
         for (const entry of entries) {
-            if (entry.length < maxBits) {
-            entry.length++;
-            excess--;
-            adjusted = true;
-            break;
-            }
+        if (entry.length < maxBits && entry.length > maxCurrentLength) {
+            maxCurrentLength = entry.length;
         }
-        if (!adjusted) break;
+        }
+
+        if (maxCurrentLength === -1) {
+        break;
+        }
+
+        const candidates = entries.filter((e) => e.length === maxCurrentLength);
+
+        for (const candidate of candidates) {
+        if (kraftSum <= 1.0) break;
+        kraftSum -= Math.pow(2, -candidate.length);
+        candidate.length++;
+        kraftSum += Math.pow(2, -candidate.length);
         }
     }
     }
