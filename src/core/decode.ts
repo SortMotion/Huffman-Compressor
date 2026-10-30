@@ -1,43 +1,66 @@
-    import type { CanonicalCode } from './canonical';
-    import { BitReader } from './bits';
+    import { MAX_CODE_LENGTH } from '../contracts/constants';
+    import { HuffmanError } from '../contracts/errors';
+    import type { CanonicalLengths } from '../contracts/types';
 
-    export function decode(compressedData: Uint8Array, canonical: CanonicalCode, originalLength: number): Uint8Array {
-    const reader = new BitReader(compressedData);
-    const result = new Uint8Array(originalLength);
+    export function decode(
+    bytes: Uint8Array,
+    totalBits: number,
+    lengths: CanonicalLengths,
+    originalSize: number
+    ): Uint8Array {
+    if (bytes.length < Math.ceil(totalBits / 8)) {
+        throw new HuffmanError('TRUNCATED', 'Faltan bytes de datos');
+    }
 
-    for (let i = 0; i < originalLength; i++) {
-        let currentCode = 0;
-        let currentLength = 0;
-        let found = false;
+    const count = new Uint16Array(MAX_CODE_LENGTH + 1);
+    for (let b = 0; b < 256; b++) {
+        if (lengths[b] > 0) count[lengths[b]]++;
+    }
 
-        while (currentLength < 15) {
-        let bit: number;
-        try {
-            bit = reader.readBits(1);
-        } catch {
-            throw new Error('TRUNCATED: Flujo de bits terminado prematuramente');
+    const next = new Uint16Array(MAX_CODE_LENGTH + 2);
+    for (let len = 1; len <= MAX_CODE_LENGTH; len++) {
+        next[len + 1] = next[len] + count[len];
+    }
+
+    const symbols = new Uint8Array(256);
+    for (let len = 1; len <= MAX_CODE_LENGTH; len++) {
+        for (let b = 0; b < 256; b++) {
+        if (lengths[b] === len) {
+            symbols[next[len]++] = b;
         }
-
-        currentCode = (currentCode << 1) | bit;
-        currentLength++;
-
-        for (let sym = 0; sym < 256; sym++) {
-            if (canonical.lengths[sym] === currentLength && canonical.codes[sym] === currentCode) {
-            result[i] = sym;
-            found = true;
-            break;
-            }
-        }
-
-        if (found) {
-            break;
-        }
-        }
-
-        if (!found) {
-        throw new Error('INVALID_BITS: Secuencia de bits no concuerda con el diccionario canónico');
         }
     }
 
-    return result;
+    const out = new Uint8Array(originalSize);
+    let bitPos = 0;
+
+    for (let i = 0; i < originalSize; i++) {
+        let code = 0;
+        let first = 0;
+        let index = 0;
+
+        for (let len = 1; ; len++) {
+        if (len > MAX_CODE_LENGTH) {
+            throw new HuffmanError('INVALID_BITS', 'Código inválido');
+        }
+        if (bitPos >= totalBits) {
+            throw new HuffmanError('TRUNCATED', 'El flujo de bits terminó antes de tiempo');
+        }
+
+        code = (code << 1) | ((bytes[bitPos >> 3] >> (7 - (bitPos & 7))) & 1);
+        bitPos++;
+
+        const c = count[len];
+        if (code - first < c) {
+            out[i] = symbols[index + code - first];
+            break;
+        }
+
+        index += c;
+        first = (first + c) << 1;
+        code <<= 1;
+        }
+    }
+
+    return out;
     }
