@@ -162,6 +162,8 @@ export function parseHeader(file: Uint8Array): ParsedHeader {
 
   const lengths: CanonicalLengths = new Uint8Array(ALPHABET_SIZE);
   let previousSymbol = -1;
+  // Suma de Kraft escalada a enteros: sum(2^(15 - len)) <= 2^15
+  let kraft = 0;
   for (let i = 0; i < symbolCount; i++) {
     const symbol = file[tableOffset + 2 * i];
     const len = file[tableOffset + 2 * i + 1];
@@ -176,6 +178,10 @@ export function parseHeader(file: Uint8Array): ParsedHeader {
     }
     lengths[symbol] = len;
     previousSymbol = symbol;
+    kraft += 1 << (MAX_CODE_LENGTH - len);
+  }
+  if (kraft > 1 << MAX_CODE_LENGTH) {
+    throw new FormatError('INCONSISTENT', 'Las longitudes no forman un código prefijo válido');
   }
 
   const dataBytes = Math.ceil(totalBits / 8);

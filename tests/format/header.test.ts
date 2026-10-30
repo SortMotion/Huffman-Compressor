@@ -136,6 +136,12 @@ describe('parseHeader', () => {
     expectFormatError(() => parseHeader(big), 'INCONSISTENT');
   });
 
+  it('INCONSISTENT: longitudes que no forman un código prefijo (Kraft > 1)', () => {
+    const bad = example1.compressedBytes.slice();
+    bad[21 + 15 + 3] = 1; // 'b' pasa de 3 a 1 bit: 'a' y 'b' comparten el código de 1 bit
+    expectFormatError(() => parseHeader(bad), 'INCONSISTENT');
+  });
+
   it('INCONSISTENT: entrada vacía con símbolos', () => {
     const bad = example3.compressedBytes.slice();
     bad[11] = 1;
