@@ -3,7 +3,7 @@
 
     interface CanonicalTreeProps {
     lengths: CanonicalLengths;
-    codes: CodeTable | Uint32Array;
+    codes: CodeTable;
     }
 
     interface TreeNode {
@@ -19,10 +19,8 @@
         const activeEntries: { symbol: number; length: number; code: number }[] = [];
 
         for (let i = 0; i < 256; i++) {
-        if (lengths[i] > 0) {
-            const codeVal = typeof codes[i] === 'string' 
-            ? parseInt(codes[i] as string, 2) 
-            : Number((codes as Uint32Array)[i]);
+        if (lengths[i] > 0 && codes[i] !== undefined) {
+            const codeVal = parseInt(codes[i] as string, 2);
 
             activeEntries.push({
             symbol: i,
