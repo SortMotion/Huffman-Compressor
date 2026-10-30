@@ -1,5 +1,5 @@
     import React, { useMemo } from 'react';
-    import type { CanonicalCode } from '../../core/canonical';
+    import type { CanonicalCode } from '../../contracts/types';
 
     interface CanonicalTreeProps {
     canonical: CanonicalCode;

@@ -115,3 +115,8 @@ export type WorkerResponse =
   | { id: number; ok: true; op: 'inspect'; result: InspectResult }
   | { id: number; ok: true; op: 'decompress'; result: DecompressResult }
   | { id: number; ok: false; error: SerializedError };
+
+  export interface CanonicalCode {
+  lengths: Uint8Array;
+  codes: Uint32Array;
+}
