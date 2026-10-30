@@ -44,13 +44,11 @@ describe('toProxyUrl', () => {
 
 describe('downloadText', () => {
   it('une los bloques y reporta progreso con el total conocido', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        streamResponse([new Uint8Array([1, 2, 3]), new Uint8Array([4, 5])], {
-          'content-length': '5',
-        })
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      streamResponse([new Uint8Array([1, 2, 3]), new Uint8Array([4, 5])], {
+        'content-length': '5',
+      })
+    );
     vi.stubGlobal('fetch', fetchMock);
     const onProgress = vi.fn();
 
