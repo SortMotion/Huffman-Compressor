@@ -95,10 +95,34 @@ describe('parseHeader', () => {
     expectFormatError(() => parseHeader(bad), 'UNSUPPORTED_VERSION');
   });
 
-  it('byte reservado distinto de cero', () => {
+  it('banderas desconocidas', () => {
     const bad = example1.compressedBytes.slice();
-    bad[5] = 1;
+    bad[5] = 2;
     expectFormatError(() => parseHeader(bad), 'INCONSISTENT');
+  });
+
+  it('bandera de modo almacenado en un archivo con tabla', () => {
+    const bad = example1.compressedBytes.slice();
+    bad[5] = 1; // dice "almacenado" pero trae 5 símbolos
+    expectFormatError(() => parseHeader(bad), 'INCONSISTENT');
+  });
+
+  it('modo almacenado: ida y vuelta de la cabecera', () => {
+    const header = { ...headerOf(example1), symbolCount: 0, totalBits: 88 };
+    const head = serializeHeader(header, new Uint8Array(256));
+    expect(head[5]).toBe(1);
+    expect(head.length).toBe(36);
+    const file = new Uint8Array(head.length + 11);
+    file.set(head);
+    file.set(example1.originalBytes, head.length);
+    const parsed = parseHeader(file);
+    expect(parsed.header).toEqual(header);
+    expect(parsed.dataOffset).toBe(36);
+  });
+
+  it('modo almacenado: totalBits debe ser originalSize × 8', () => {
+    const header = { ...headerOf(example1), symbolCount: 0, totalBits: 87 };
+    expectFormatError(() => serializeHeader(header, new Uint8Array(256)), 'INCONSISTENT');
   });
 
   it('TRUNCATED: menos que la cabecera fija', () => {
@@ -134,6 +158,12 @@ describe('parseHeader', () => {
     const big = example1.compressedBytes.slice();
     big[21 + 15 + 1] = 16;
     expectFormatError(() => parseHeader(big), 'INCONSISTENT');
+  });
+
+  it('INCONSISTENT: longitudes que no forman un código prefijo (Kraft > 1)', () => {
+    const bad = example1.compressedBytes.slice();
+    bad[21 + 15 + 3] = 1; // 'b' pasa de 3 a 1 bit: 'a' y 'b' comparten el código de 1 bit
+    expectFormatError(() => parseHeader(bad), 'INCONSISTENT');
   });
 
   it('INCONSISTENT: entrada vacía con símbolos', () => {
