@@ -4,9 +4,10 @@ import type {
   FrequencyTable,
   CompressResult,
   InspectResult,
-  DecompressResult
+  DecompressResult,
 } from '../contracts/types';
 import type { HuffmanClient } from './index';
+import { deserializeError } from './errors';
 
 type PromiseResolver = (value: unknown) => void;
 type PromiseRejecter = (reason: Error) => void;
@@ -28,7 +29,7 @@ const getTransferableBuffer = (data: Uint8Array, forceCopy = false): ArrayBuffer
 
 export function createHuffmanClient(): HuffmanClient {
   const worker = new Worker(new URL('./huffman.worker.ts', import.meta.url), {
-    type: 'module'
+    type: 'module',
   });
 
   let nextId = 1;
@@ -48,7 +49,7 @@ export function createHuffmanClient(): HuffmanClient {
       else if (res.op === 'inspect') handlers.resolve(res.result);
       else if (res.op === 'decompress') handlers.resolve(res.result);
     } else {
-      handlers.reject(new Error(res.error?.message || 'Error en el worker'));
+      handlers.reject(deserializeError(res.error));
     }
   };
 
@@ -91,7 +92,7 @@ export function createHuffmanClient(): HuffmanClient {
         reject: (err: Error) => {
           signal?.removeEventListener('abort', onAbort);
           reject(err);
-        }
+        },
       });
 
       const fullRequest = { ...payload, id } as WorkerRequest;
@@ -102,11 +103,7 @@ export function createHuffmanClient(): HuffmanClient {
   return {
     analyze(data: Uint8Array, signal?: AbortSignal): Promise<FrequencyTable> {
       const buffer = getTransferableBuffer(data, true);
-      return sendRequest<FrequencyTable>(
-        { op: 'analyze', data: buffer },
-        [buffer],
-        signal
-      );
+      return sendRequest<FrequencyTable>({ op: 'analyze', data: buffer }, [buffer], signal);
     },
     compress(data: Uint8Array, fileName: string, signal?: AbortSignal): Promise<CompressResult> {
       const buffer = getTransferableBuffer(data);
@@ -118,23 +115,15 @@ export function createHuffmanClient(): HuffmanClient {
     },
     inspect(file: Uint8Array, signal?: AbortSignal): Promise<InspectResult> {
       const buffer = getTransferableBuffer(file);
-      return sendRequest<InspectResult>(
-        { op: 'inspect', data: buffer },
-        [buffer],
-        signal
-      );
+      return sendRequest<InspectResult>({ op: 'inspect', data: buffer }, [buffer], signal);
     },
     decompress(file: Uint8Array, signal?: AbortSignal): Promise<DecompressResult> {
       const buffer = getTransferableBuffer(file);
-      return sendRequest<DecompressResult>(
-        { op: 'decompress', data: buffer },
-        [buffer],
-        signal
-      );
+      return sendRequest<DecompressResult>({ op: 'decompress', data: buffer }, [buffer], signal);
     },
     dispose() {
       worker.terminate();
       pendingRequests.clear();
-    }
+    },
   };
 }

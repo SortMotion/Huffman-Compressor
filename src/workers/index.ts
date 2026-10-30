@@ -5,6 +5,12 @@ import type {
   DecompressResult,
 } from '../contracts/types';
 
+/**
+ * `analyze` copia los datos. `compress`, `inspect` y `decompress` **transfieren** el buffer
+ * del `Uint8Array` recibido (queda vacío en el hilo principal) para no duplicar memoria;
+ * si después se necesita, hay que pasar una copia (`data.slice()`).
+ * Los errores llegan como `HuffmanError` o `FormatError`, con su `code`.
+ */
 export interface HuffmanClient {
   analyze(data: Uint8Array, signal?: AbortSignal): Promise<FrequencyTable>;
   compress(data: Uint8Array, fileName: string, signal?: AbortSignal): Promise<CompressResult>;
@@ -13,4 +19,4 @@ export interface HuffmanClient {
   dispose(): void;
 }
 
-export declare function createHuffmanClient(): HuffmanClient;
+export { createHuffmanClient } from './client';
