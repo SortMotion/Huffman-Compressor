@@ -47,7 +47,7 @@
             throw new HuffmanError('TRUNCATED', 'El flujo de bits terminó antes de tiempo');
         }
 
-        code = (code << 1) | ((bytes[bitPos >> 3] >> (7 - (bitPos & 7))) & 1);
+        code |= (bytes[bitPos >> 3] >> (7 - (bitPos & 7))) & 1;
         bitPos++;
 
         const c = count[len];
