@@ -1,29 +1,33 @@
     import React, { useMemo } from 'react';
-    import type { CanonicalCode } from '../../contracts/types';
+    import type { CanonicalLengths, CodeTable } from '../../contracts/types';
 
     interface CanonicalTreeProps {
-    canonical: CanonicalCode;
+    lengths: CanonicalLengths;
+    codes: CodeTable | Uint32Array;
     }
 
     interface TreeNode {
     symbol: number | null;
-    bit: string | null;
     length: number;
     code: number;
     left: TreeNode | null;
     right: TreeNode | null;
     }
 
-    export const CanonicalTree: React.FC<CanonicalTreeProps> = ({ canonical }) => {
+    export const CanonicalTree: React.FC<CanonicalTreeProps> = ({ lengths, codes }) => {
     const root = useMemo(() => {
         const activeEntries: { symbol: number; length: number; code: number }[] = [];
 
         for (let i = 0; i < 256; i++) {
-        if (canonical.lengths[i] > 0) {
+        if (lengths[i] > 0) {
+            const codeVal = typeof codes[i] === 'string' 
+            ? parseInt(codes[i] as string, 2) 
+            : Number((codes as Uint32Array)[i]);
+
             activeEntries.push({
             symbol: i,
-            length: canonical.lengths[i],
-            code: canonical.codes[i],
+            length: lengths[i],
+            code: codeVal,
             });
         }
         }
@@ -34,7 +38,6 @@
 
         const head: TreeNode = {
         symbol: null,
-        bit: null,
         length: 0,
         code: 0,
         left: null,
@@ -51,7 +54,6 @@
             if (!currentNode.left) {
                 currentNode.left = {
                 symbol: null,
-                bit: '0',
                 length: entry.length - i,
                 code: entry.code >> i,
                 left: null,
@@ -63,7 +65,6 @@
             if (!currentNode.right) {
                 currentNode.right = {
                 symbol: null,
-                bit: '1',
                 length: entry.length - i,
                 code: entry.code >> i,
                 left: null,
@@ -77,7 +78,7 @@
         }
 
         return head;
-    }, [canonical]);
+    }, [lengths, codes]);
 
     if (!root || (!root.left && !root.right && root.symbol === null)) {
         return <div className="canonical-tree-empty">Árbol vacío o sin símbolos activos</div>;
@@ -93,7 +94,7 @@
             : `0x${node.symbol?.toString(16).padStart(2, '0')}`;
 
         return (
-            <div className="tree-leaf" style={{ marginLeft: '20px', margin: '4px 0' }}>
+            <div className="tree-leaf" style={{ margin: '4px 0 4px 20px' }}>
             <code>
                 {label}: Símbolo {charRepresentation} ({node.symbol}) | Código: {node.code.toString(2).padStart(node.length, '0')} (L: {node.length})
             </code>
@@ -102,7 +103,7 @@
         }
 
         return (
-        <details open style={{ marginLeft: '20px', margin: '4px 0' }}>
+        <details open style={{ margin: '4px 0 4px 20px' }}>
             <summary style={{ cursor: 'pointer', userSelect: 'none' }}>
             <code>{label} (Nivel {node.length})</code>
             </summary>
