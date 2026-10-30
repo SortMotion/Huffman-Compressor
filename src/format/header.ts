@@ -15,7 +15,7 @@ import type { CanonicalLengths, FileHeader } from '../contracts/types';
  * Diseño de la cabecera (big-endian):
  *   0  magic          4 bytes  "HUF!"
  *   4  version        u8
- *   5  reservado      u8       siempre 0
+ *   5  banderas       u8       0 = Huffman, 1 = almacenado (FLAG_STORED)
  *   6  originalSize   u32
  *  10  symbolCount    u16
  *  12  totalBits      u32
@@ -24,9 +24,20 @@ import type { CanonicalLengths, FileHeader } from '../contracts/types';
  *  21  originalName   nameLength bytes (UTF-8)
  *  ..  tabla          symbolCount pares (byte, longitud), ordenados por byte
  *  ..  datos          ceil(totalBits / 8) bytes; los bits de relleno del último byte en 0
+ *
+ * Modo almacenado: cuando Huffman no ahorra espacio, los datos se guardan tal cual,
+ * sin tabla (symbolCount = 0, totalBits = originalSize * 8). Así un .ycoma nunca crece
+ * más que su cabecera (21 bytes + nombre).
  */
 const OFFSET_VERSION = 4;
-const OFFSET_RESERVED = 5;
+const OFFSET_FLAGS = 5;
+
+export const FLAG_STORED = 0x01;
+
+/** `true` si el archivo guarda los datos sin comprimir (modo almacenado). */
+export function isStored(header: Pick<FileHeader, 'originalSize' | 'symbolCount'>): boolean {
+  return header.originalSize > 0 && header.symbolCount === 0;
+}
 const OFFSET_ORIGINAL_SIZE = 6;
 const OFFSET_SYMBOL_COUNT = 10;
 const OFFSET_TOTAL_BITS = 12;
@@ -88,13 +99,14 @@ export function serializeHeader(header: FileHeader, lengths: CanonicalLengths): 
     throw new FormatError('INCONSISTENT', 'symbolCount no coincide con la tabla de longitudes');
   }
   assertUint(header.totalBits, MAX_INPUT_BYTES * MAX_CODE_LENGTH, 'totalBits', 'TOO_LARGE');
-  assertConsistentCounts(header.originalSize, symbolCount, header.totalBits);
+  const stored = isStored(header);
+  assertConsistentCounts(header.originalSize, symbolCount, header.totalBits, stored);
 
   const out = new Uint8Array(headerByteLength(nameBytes.length, symbolCount));
   const view = new DataView(out.buffer);
   out.set(MAGIC, 0);
   view.setUint8(OFFSET_VERSION, header.version);
-  view.setUint8(OFFSET_RESERVED, 0);
+  view.setUint8(OFFSET_FLAGS, stored ? FLAG_STORED : 0);
   view.setUint32(OFFSET_ORIGINAL_SIZE, header.originalSize, false);
   view.setUint16(OFFSET_SYMBOL_COUNT, symbolCount, false);
   view.setUint32(OFFSET_TOTAL_BITS, header.totalBits, false);
@@ -127,8 +139,9 @@ export function parseHeader(file: Uint8Array): ParsedHeader {
   if (version !== FORMAT_VERSION) {
     throw new FormatError('UNSUPPORTED_VERSION', `Versión de formato no soportada: ${version}`);
   }
-  if (view.getUint8(OFFSET_RESERVED) !== 0) {
-    throw new FormatError('INCONSISTENT', 'El byte reservado debe ser 0');
+  const flags = view.getUint8(OFFSET_FLAGS);
+  if (flags !== 0 && flags !== FLAG_STORED) {
+    throw new FormatError('INCONSISTENT', `Banderas desconocidas en la cabecera: ${flags}`);
   }
 
   const originalSize = view.getUint32(OFFSET_ORIGINAL_SIZE, false);
@@ -143,7 +156,7 @@ export function parseHeader(file: Uint8Array): ParsedHeader {
   if (symbolCount > ALPHABET_SIZE) {
     throw new FormatError('INCONSISTENT', `symbolCount fuera de rango: ${symbolCount}`);
   }
-  assertConsistentCounts(originalSize, symbolCount, totalBits);
+  assertConsistentCounts(originalSize, symbolCount, totalBits, flags === FLAG_STORED);
 
   const tableOffset = FIXED_HEADER_SIZE + nameLength;
   const dataOffset = tableOffset + 2 * symbolCount;
@@ -222,8 +235,18 @@ function assertUint(
 function assertConsistentCounts(
   originalSize: number,
   symbolCount: number,
-  totalBits: number
+  totalBits: number,
+  stored: boolean
 ): void {
+  if (stored) {
+    if (originalSize === 0 || symbolCount !== 0 || totalBits !== originalSize * 8) {
+      throw new FormatError(
+        'INCONSISTENT',
+        'El modo almacenado requiere datos, tabla vacía y totalBits = originalSize × 8'
+      );
+    }
+    return;
+  }
   if (originalSize === 0) {
     if (symbolCount !== 0 || totalBits !== 0) {
       throw new FormatError('INCONSISTENT', 'Una entrada vacía no admite símbolos ni bits');
