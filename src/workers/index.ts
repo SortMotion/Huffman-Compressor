@@ -2,7 +2,7 @@ import type {
   FrequencyTable,
   CompressResult,
   InspectResult,
-  DecompressResult
+  DecompressResult,
 } from '../contracts/types';
 
 export interface HuffmanClient {

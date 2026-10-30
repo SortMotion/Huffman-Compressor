@@ -1,4 +1,5 @@
-    import type { FrequencyTable } from '../contracts/types';
+    import { MAX_CODE_LENGTH } from '../contracts/constants';
+    import type { CanonicalLengths, CodeTable, FrequencyTable } from '../contracts/types';
 
     export interface CanonicalCode {
     lengths: Uint8Array;
@@ -85,13 +86,12 @@
     }
     computeDepths(root, 0);
 
-    // Pasar la longitud real devuelta por el árbol (sin Math.min previo)
     const symbolEntries = Array.from(rawLengths.entries()).map(([symbol, length]) => ({
         symbol,
         length,
     }));
 
-    packageLimitLengths(symbolEntries, 15);
+    packageLimitLengths(symbolEntries, MAX_CODE_LENGTH);
 
     for (const entry of symbolEntries) {
         lengths[entry.symbol] = entry.length;
@@ -123,6 +123,27 @@
     }
 
     return { lengths, codes };
+    }
+
+    export function buildCanonicalLengths(freqs: FrequencyTable): CanonicalLengths {
+    return generateCanonicalCodes(freqs).lengths;
+    }
+
+    export function buildCanonicalCodes(lengths: CanonicalLengths): CodeTable {
+    const codes: CodeTable = new Array(256).fill(undefined);
+    let code = 0;
+
+    for (let len = 1; len <= MAX_CODE_LENGTH; len++) {
+        for (let b = 0; b < 256; b++) {
+        if (lengths[b] === len) {
+            codes[b] = code.toString(2).padStart(len, '0');
+            code++;
+        }
+        }
+        code <<= 1;
+    }
+
+    return codes;
     }
 
     function packageLimitLengths(entries: { symbol: number; length: number }[], maxBits: number) {
