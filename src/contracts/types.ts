@@ -14,12 +14,12 @@ export interface TreeNode {
   isLeaf: boolean;
   byte?: Byte;
   bitLength?: number;
-  left?: TreeNode;     // rama "0"
-  right?: TreeNode;    // rama "1"
+  left?: TreeNode; // rama "0"
+  right?: TreeNode; // rama "1"
 }
 
 export interface EncodeResult {
-  bytes: Uint8Array;   // longitud = ceil(totalBits / 8); bits de relleno en 0
+  bytes: Uint8Array; // longitud = ceil(totalBits / 8); bits de relleno en 0
   totalBits: number;
 }
 
@@ -36,13 +36,13 @@ export interface StatsInput {
 export interface CompressionStats {
   originalBytes: number;
   compressedBytes: number;
-  savedBytes: number;                 // puede ser negativo (D20)
-  reductionPercent: number | null;    // null si originalBytes = 0
-  ratio: number | null;               // compressedBytes / originalBytes; null si originalBytes = 0
+  savedBytes: number; // puede ser negativo (D20)
+  reductionPercent: number | null; // null si originalBytes = 0
+  ratio: number | null; // compressedBytes / originalBytes; null si originalBytes = 0
   symbolCount: number;
-  headerBytes: number;                // 21 + n
-  tableBytes: number;                 // 2 * symbolCount
-  dataBytes: number;                  // ceil(totalBits / 8)
+  headerBytes: number; // 21 + n
+  tableBytes: number; // 2 * symbolCount
+  dataBytes: number; // ceil(totalBits / 8)
   totalBits: number;
 }
 
@@ -51,13 +51,13 @@ export interface FileHeader {
   originalSize: number;
   symbolCount: number;
   totalBits: number;
-  crc32Hex: string;                   // 8 dígitos hex en minúscula
+  crc32Hex: string; // 8 dígitos hex en minúscula
   originalName: string;
 }
 
 export interface CompressResult {
   file: Uint8Array;
-  suggestedName: string;              // originalName + FILE_EXTENSION
+  suggestedName: string; // originalName + FILE_EXTENSION
   freqs: FrequencyTable;
   lengths: CanonicalLengths;
   codes: CodeTable;
@@ -74,7 +74,7 @@ export interface InspectResult {
 
 export interface DecompressResult {
   content: Uint8Array;
-  verified: boolean;                  // false si el CRC32 no coincide (no lanza)
+  verified: boolean; // false si el CRC32 no coincide (no lanza)
   expectedCrc32: string;
   actualCrc32: string;
   originalName: string;
@@ -84,13 +84,13 @@ export interface BookSummary {
   id: number;
   title: string;
   authors: string[];
-  downloadUrl: string;                // URL original de Gutendex (D3); downloadText la traduce
+  downloadUrl: string; // URL original de Gutendex (D3); downloadText la traduce
 }
 
 export interface SearchResult {
-  results: BookSummary[];             // solo libros con texto utilizable (D3)
-  count: number;                     
-  next: string | null;
+  results: BookSummary[]; // solo libros con texto utilizable (D3)
+  count: number; // total de coincidencias según Gutendex
+  next: string | null; // v1 solo muestra la primera página
   previous: string | null;
 }
 
