@@ -54,7 +54,7 @@ describe('pickTextUrl', () => {
 });
 
 describe('searchBooks', () => {
-  it('consulta el rewrite de Vercel filtrando por texto plano', async () => {
+  it('consulta gutendex.com directamente (CORS) filtrando por texto plano', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(jsonResponse({ count: 0, next: null, previous: null, results: [] }));
@@ -64,8 +64,23 @@ describe('searchBooks', () => {
     await searchBooks('pride & prejudice', controller.signal);
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/gutendex/books/?search=pride+%26+prejudice&mime_type=text%2Fplain');
+    expect(url).toBe(
+      'https://gutendex.com/books/?search=pride+%26+prejudice&mime_type=text%2Fplain'
+    );
     expect(init.signal).toBe(controller.signal);
+  });
+
+  it('normaliza la búsqueda para aprovechar la caché de Gutendex', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ count: 0, next: null, previous: null, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await searchBooks('  Don   QUIJOTE ');
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://gutendex.com/books/?search=don+quijote&mime_type=text%2Fplain'
+    );
   });
 
   it('mapea resultados y deja fuera libros sin texto utilizable', async () => {
@@ -134,7 +149,7 @@ describe('searchBooks', () => {
     await expectSourceError(searchBooks('x'), 'ABORTED');
   });
 
-  it('HTTP si el proxy devuelve HTML (rewrite inactivo)', async () => {
+  it('HTTP si llega HTML en vez de JSON (p. ej. el desafío de Cloudflare)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(

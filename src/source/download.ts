@@ -41,6 +41,18 @@ export function canonicalTextUrl(url: URL): URL | null {
   return new URL(`/cache/epub/${id}/pg${id}.txt`, url);
 }
 
+/**
+ * Detrás del proxy de Vercel, Gutenberg arma la redirección con el encabezado
+ * `X-Forwarded-Proto: https, http` y devuelve algo como
+ * `http://www.gutenberg.org/https,%20http://www.gutenberg.org/cache/epub/84/pg84.txt`.
+ * Se conserva solo la última URL absoluta.
+ */
+export function repairLocation(location: string): string {
+  const decoded = location.replace(/%20/g, ' ');
+  const last = Math.max(decoded.lastIndexOf('http://'), decoded.lastIndexOf('https://'));
+  return last > 0 ? decoded.slice(last) : location;
+}
+
 function tooLarge(): SourceError {
   return new SourceError('TOO_LARGE', 'El libro excede el límite de 20 MiB');
 }
@@ -69,7 +81,7 @@ async function fetchThroughProxy(original: URL, signal?: AbortSignal): Promise<R
     let next: URL | null;
     if (location) {
       try {
-        next = parseGutenbergUrl(location, upstream);
+        next = parseGutenbergUrl(repairLocation(location), upstream);
       } catch {
         throw new SourceError('HTTP', 'El mirror redirigió a un host no permitido');
       }

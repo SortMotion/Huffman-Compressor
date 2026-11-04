@@ -8,7 +8,7 @@ import { downloadText, searchBooks } from '../../source';
 import { Alert, Button, Card, HeroArt, ProgressBar } from '../ui';
 
 const TOO_LARGE = toUserMessage({ name: 'FormatError', code: 'TOO_LARGE' });
-const SEARCH_TIMEOUT_MS = 90_000;
+const SEARCH_TIMEOUT_MS = 120_000;
 const SUGGESTIONS = ['Don Quijote', 'Frankenstein', 'Pride and Prejudice', 'Alice in Wonderland'];
 
 export function SourceScreen() {
@@ -211,7 +211,7 @@ function BookSearch({
     controller.current?.abort();
     const current = new AbortController();
     controller.current = current;
-    // Gutendex a veces deja la petición colgada: se corta a los 90 s con un aviso claro
+    // Una búsqueda que Gutendex no tiene en caché tarda ~1 minuto: se corta a los 2 min
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
@@ -223,7 +223,9 @@ function BookSearch({
       setResult(await searchBooks(text, current.signal));
     } catch (err) {
       if (timedOut) {
-        setError('Gutendex no respondió en 90 segundos. Intenta de nuevo o sube un archivo local.');
+        setError(
+          'Gutendex no respondió en 2 minutos. Intenta de nuevo (suele quedar listo en caché) o sube un archivo local.'
+        );
       } else if (!isAbort(err)) {
         setError(toUserMessage(err).message);
       }

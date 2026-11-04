@@ -1,8 +1,13 @@
 import { SourceError } from '../contracts/errors';
 import type { BookSummary, SearchResult } from '../contracts/types';
 
-/** Reescrito por vercel.json hacia https://gutendex.com/ (evita CORS). */
-const GUTENDEX_BASE = '/api/gutendex';
+/**
+ * Gutendex permite CORS (`Access-Control-Allow-Origin: *`), así que el navegador lo
+ * consulta directo. No se usa el proxy de Vercel: Cloudflare, delante de gutendex.com,
+ * responde con un desafío anti-bots ("Just a moment…") a las peticiones de los
+ * servidores de Vercel.
+ */
+const GUTENDEX_BASE = 'https://gutendex.com';
 
 interface GutendexBook {
   id: number;
@@ -48,12 +53,14 @@ function isReadme(url: string): boolean {
 }
 
 export async function searchBooks(query: string, signal?: AbortSignal): Promise<SearchResult> {
-  const trimmed = query.trim();
-  if (trimmed === '') {
+  // Gutendex no distingue mayúsculas, pero su caché (Cloudflare, 4 h) sí: normalizar
+  // hace que más búsquedas respondan al instante en lugar de tardar ~1 minuto.
+  const normalized = query.trim().replace(/\s+/g, ' ').toLowerCase();
+  if (normalized === '') {
     return { results: [], count: 0, next: null, previous: null };
   }
 
-  const params = new URLSearchParams({ search: trimmed, mime_type: 'text/plain' });
+  const params = new URLSearchParams({ search: normalized, mime_type: 'text/plain' });
   let response: Response;
   try {
     response = await fetch(`${GUTENDEX_BASE}/books/?${params}`, { signal });
@@ -63,12 +70,9 @@ export async function searchBooks(query: string, signal?: AbortSignal): Promise<
   if (!response.ok) {
     throw new SourceError('HTTP', `Gutendex respondió con el estado ${response.status}`);
   }
-  // Si el rewrite no está activo, el servidor suele devolver index.html (fallback de la SPA).
+  // Una página HTML suele ser el desafío de Cloudflare o una página de error del servicio
   if (!/json/i.test(response.headers.get('content-type') ?? '')) {
-    throw new SourceError(
-      'HTTP',
-      `El proxy ${GUTENDEX_BASE} no devolvió JSON; revisa el rewrite en vercel.json`
-    );
+    throw new SourceError('HTTP', 'Gutendex no devolvió JSON (servicio caído o bloqueado)');
   }
 
   let body: GutendexResponse;

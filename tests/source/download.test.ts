@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { canonicalTextUrl, downloadText, toProxyUrl } from '../../src/source/download';
+import {
+  canonicalTextUrl,
+  downloadText,
+  repairLocation,
+  toProxyUrl,
+} from '../../src/source/download';
 import { MAX_INPUT_BYTES } from '../../src/contracts/constants';
 import { SourceError } from '../../src/contracts/errors';
 
@@ -146,6 +151,23 @@ describe('canonicalTextUrl', () => {
   });
 });
 
+describe('repairLocation', () => {
+  it('se queda con la última URL absoluta', () => {
+    expect(
+      repairLocation(
+        'http://www.gutenberg.org/https,%20http://www.gutenberg.org/cache/epub/84/pg84.txt'
+      )
+    ).toBe('http://www.gutenberg.org/cache/epub/84/pg84.txt');
+  });
+
+  it('no toca redirecciones normales ni relativas', () => {
+    expect(repairLocation('https://www.gutenberg.org/cache/epub/84/pg84.txt')).toBe(
+      'https://www.gutenberg.org/cache/epub/84/pg84.txt'
+    );
+    expect(repairLocation('/cache/epub/84/pg84.txt')).toBe('/cache/epub/84/pg84.txt');
+  });
+});
+
 describe('downloadText: proxy y redirecciones', () => {
   it('pide sin seguir redirecciones automáticamente', async () => {
     const fetchMock = vi.fn().mockResolvedValue(streamResponse([new Uint8Array([1])]));
@@ -168,6 +190,20 @@ describe('downloadText: proxy y redirecciones', () => {
       '/api/pg/ebooks/1342.txt.utf-8',
       '/api/pg/cache/epub/1342/pg1342.txt',
     ]);
+  });
+
+  it('repara la redirección mal formada que Gutenberg arma detrás del proxy de Vercel', async () => {
+    const broken =
+      'http://www.gutenberg.org/https,%20http://www.gutenberg.org/cache/epub/1342/pg1342.txt';
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(redirect(broken, 302))
+      .mockResolvedValueOnce(streamResponse([new Uint8Array([1])]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await downloadText(BOOK_URL);
+
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/pg/cache/epub/1342/pg1342.txt');
   });
 
   it('resuelve redirecciones relativas contra la URL del mirror', async () => {
