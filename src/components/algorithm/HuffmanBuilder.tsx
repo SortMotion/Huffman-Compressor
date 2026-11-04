@@ -11,12 +11,19 @@ import type { CodeTable, FrequencyTable } from '../../contracts/types';
 import {
   bitsOf,
   buildHuffmanSteps,
-  layoutDendrogram,
   leavesOf,
   pathAt,
   rootsAt,
   type HuffmanBuild,
 } from './huffmanSteps';
+import {
+  geometryFor,
+  lerpGeometry,
+  nodeDepths,
+  pointOnEdge,
+  type TreeGeometry,
+  type TreeView,
+} from './treeLayouts';
 
 interface Camera {
   k: number;
@@ -32,6 +39,14 @@ const FOLLOW_ZOOM = 1;
 const QUEUE_PREVIEW = 12;
 const LEAF_R = 21;
 const NODE_R = 17;
+const MORPH_MS = 950;
+const FIT_PADDING = 70;
+
+const VIEWS: { id: TreeView; label: string }[] = [
+  { id: 'build', label: 'Construcción' },
+  { id: 'radial', label: 'Radial' },
+  { id: 'depth', label: 'Por profundidad' },
+];
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
@@ -63,6 +78,32 @@ function zoomAt(cam: Camera, px: number, py: number, factor: number): Camera {
   return { k, tx: px - (px - cam.tx) * ratio, ty: py - (py - cam.ty) * ratio };
 }
 
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+/** Lleva la geometría mostrada hacia `target` con una transición; cada nodo viaja a su lugar. */
+function useMorph(target: TreeGeometry): TreeGeometry {
+  const [shown, setShown] = useState(target);
+  const shownRef = useRef(target);
+  useEffect(() => {
+    const from = shownRef.current;
+    if (from === target) return;
+    const compatible = from.x.length === target.x.length;
+    const start = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      const t = compatible ? Math.min(1, (now - start) / MORPH_MS) : 1;
+      const next = t >= 1 ? target : lerpGeometry(from, target, easeInOut(t));
+      shownRef.current = next;
+      setShown(next);
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target]);
+  // Si cambió el árbol (otro archivo), no se mezclan geometrías de distinto tamaño
+  return shown.x.length === target.x.length ? shown : target;
+}
+
 interface HuffmanBuilderProps {
   freqs: FrequencyTable;
   /** Códigos canónicos finales (los del .ycoma) para compararlos con los del árbol. */
@@ -75,10 +116,10 @@ interface HuffmanBuilderProps {
  */
 export function HuffmanBuilder({ freqs, codes }: HuffmanBuilderProps) {
   const build = useMemo(() => buildHuffmanSteps(freqs), [freqs]);
-  const layout = useMemo(() => layoutDendrogram(build), [build]);
   const total = build.steps.length;
 
   const [rawStep, setStep] = useState(0);
+  const [view, setView] = useState<TreeView>('build');
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -93,6 +134,16 @@ export function HuffmanBuilder({ freqs, codes }: HuffmanBuilderProps) {
   // Si cambian las frecuencias, el paso guardado puede quedar fuera de rango
   const step = Math.min(rawStep, total);
   const focus = hovered ?? selected;
+  // Mientras se construye solo tiene sentido el dendrograma; al terminar se elige la forma
+  const activeView: TreeView = step >= total ? view : 'build';
+
+  const buildGeo = useMemo(() => geometryFor(build, 'build'), [build]);
+  const target = useMemo(
+    () => (activeView === 'build' ? buildGeo : geometryFor(build, activeView)),
+    [build, buildGeo, activeView]
+  );
+  const geo = useMorph(target);
+  const depths = useMemo(() => nodeDepths(build), [build]);
 
   useEffect(() => {
     const el = box.current;
@@ -114,10 +165,16 @@ export function HuffmanBuilder({ freqs, codes }: HuffmanBuilderProps) {
   }, [playing, step, speed, total]);
 
   const fit = useMemo<Camera>(() => {
-    if (!size.w || !layout.width) return { k: 1, tx: 0, ty: 0 };
-    const k = clamp(Math.min(size.w / layout.width, size.h / layout.height), MIN_ZOOM, 1.2);
-    return { k, tx: (size.w - layout.width * k) / 2, ty: (size.h - layout.height * k) / 2 };
-  }, [size, layout]);
+    if (!size.w || target.x.length === 0) return { k: 1, tx: 0, ty: 0 };
+    const w = target.maxX - target.minX + FIT_PADDING * 2;
+    const h = target.maxY - target.minY + FIT_PADDING * 2;
+    const k = clamp(Math.min(size.w / w, size.h / h), MIN_ZOOM, 1.2);
+    return {
+      k,
+      tx: size.w / 2 - ((target.minX + target.maxX) / 2) * k,
+      ty: size.h / 2 - ((target.minY + target.maxY) / 2) * k,
+    };
+  }, [size, target]);
 
   // Cámara automática: al inicio, la primera pareja que se va a unir; luego, la última
   // unión; al final, todo el árbol
@@ -128,15 +185,15 @@ export function HuffmanBuilder({ freqs, codes }: HuffmanBuilderProps) {
     let cy: number;
     if (step === 0) {
       const { left, right } = build.steps[0];
-      cx = (layout.x[left] + layout.x[right]) / 2;
-      cy = layout.y[left] - 60;
+      cx = (buildGeo.x[left] + buildGeo.x[right]) / 2;
+      cy = buildGeo.y[left] - 60;
     } else {
       const { parent } = build.steps[step - 1];
-      cx = layout.x[parent];
-      cy = layout.y[parent] + 40;
+      cx = buildGeo.x[parent];
+      cy = buildGeo.y[parent] + 40;
     }
     return { k, tx: size.w / 2 - cx * k, ty: size.h / 2 - cy * k };
-  }, [step, total, size, fit, build, layout]);
+  }, [step, total, size, fit, build, buildGeo]);
 
   const cam = manual ?? follow;
 
@@ -206,7 +263,12 @@ export function HuffmanBuilder({ freqs, codes }: HuffmanBuilderProps) {
   function focusOn(id: number) {
     setSelected(id);
     const k = Math.max(cam.k, FOLLOW_ZOOM);
-    setManual({ k, tx: size.w / 2 - layout.x[id] * k, ty: size.h / 2 - layout.y[id] * k });
+    setManual({ k, tx: size.w / 2 - target.x[id] * k, ty: size.h / 2 - target.y[id] * k });
+  }
+
+  function changeView(next: TreeView) {
+    setView(next);
+    setManual(null);
   }
 
   function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
@@ -232,8 +294,17 @@ export function HuffmanBuilder({ freqs, codes }: HuffmanBuilderProps) {
   }
 
   const visible = build.nodes.filter((n) => n.createdAt <= step);
-  const { x, y } = layout;
+  const { x, y } = geo;
   const dim = focus !== null && path.length > 0;
+
+  // Guías de nivel: anillos (radial) o líneas horizontales (por profundidad)
+  const levels: { depth: number; id: number }[] = [];
+  if (activeView !== 'build') {
+    for (const node of build.nodes) {
+      const d = depths[node.id];
+      if (d > 0 && !levels.some((l) => l.depth === d)) levels.push({ depth: d, id: node.id });
+    }
+  }
 
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_19rem]">
@@ -270,32 +341,84 @@ export function HuffmanBuilder({ freqs, codes }: HuffmanBuilderProps) {
                 transition: dragging ? 'none' : 'transform 650ms cubic-bezier(.2,.7,.2,1)',
               }}
             >
-              {/* Ramas: horizontal a la altura del padre y vertical hasta el hijo */}
+              {/* Guías: anillos en el radial, líneas en la vista por profundidad */}
+              {levels.map(({ depth, id }) =>
+                activeView === 'radial' ? (
+                  <g key={`ring-${depth}`} style={{ animation: 'fade-in 1s ease-out both' }}>
+                    <circle
+                      cx={0}
+                      cy={0}
+                      r={Math.hypot(target.x[id], target.y[id])}
+                      fill="none"
+                      stroke="white"
+                      strokeOpacity={0.06}
+                      strokeDasharray="2 6"
+                    />
+                    <text
+                      x={6}
+                      y={-Math.hypot(target.x[id], target.y[id]) - 6}
+                      className="font-mono"
+                      fill="#71717a"
+                      style={{ fontSize: 11 }}
+                    >
+                      {depth} {depth === 1 ? 'bit' : 'bits'}
+                    </text>
+                  </g>
+                ) : (
+                  <g key={`line-${depth}`} style={{ animation: 'fade-in 1s ease-out both' }}>
+                    <line
+                      x1={target.minX - 60}
+                      x2={target.maxX + 60}
+                      y1={target.y[id]}
+                      y2={target.y[id]}
+                      stroke="white"
+                      strokeOpacity={0.06}
+                      strokeDasharray="2 6"
+                    />
+                    <text
+                      x={target.minX - 64}
+                      y={target.y[id] + 4}
+                      textAnchor="end"
+                      className="font-mono"
+                      fill="#71717a"
+                      style={{ fontSize: 11 }}
+                    >
+                      {depth} {depth === 1 ? 'bit' : 'bits'}
+                    </text>
+                  </g>
+                )
+              )}
+
+              {/* Ramas: curvas del padre al hijo (0 = índigo, 1 = magenta) */}
               {visible.map((p) => {
                 if (p.symbol !== null) return null;
                 const fresh = p.createdAt === step && step > 0;
                 return [p.left!, p.right!].map((child, bit) => {
                   const highlighted = onPath.has(p.id) && onPath.has(child);
+                  const [lx, ly] = pointOnEdge(geo, p.id, child, 0.55);
                   return (
                     <g key={`${p.id}-${child}`}>
                       <path
-                        d={`M${x[p.id]},${y[p.id]} H${x[child]} V${y[child]}`}
+                        d={`M${x[p.id]},${y[p.id]} C${geo.c1x[child]},${geo.c1y[child]} ${geo.c2x[child]},${geo.c2y[child]} ${x[child]},${y[child]}`}
                         fill="none"
                         stroke={bit === 0 ? '#a5b4fc' : '#f0abfc'}
-                        strokeOpacity={highlighted ? 1 : dim ? 0.18 : 0.6}
-                        strokeWidth={highlighted ? 3.5 : 1.8}
-                        strokeLinejoin="round"
+                        strokeOpacity={highlighted ? 1 : dim ? 0.18 : 0.65}
+                        strokeWidth={highlighted ? 3.5 : 2}
+                        strokeLinecap="round"
                         pathLength={1}
                         strokeDasharray={fresh ? 1 : undefined}
                         style={fresh ? { animation: 'draw 0.7s ease-out both' } : undefined}
                       />
                       <text
-                        x={x[child] + (bit === 0 ? -7 : 7)}
-                        y={(y[p.id] + y[child]) / 2 + 4}
-                        textAnchor={bit === 0 ? 'end' : 'start'}
+                        x={lx}
+                        y={ly + 4}
+                        textAnchor="middle"
                         className="font-mono"
                         fill={bit === 0 ? '#c7d2fe' : '#f5d0fe'}
-                        opacity={dim && !highlighted ? 0.25 : 0.9}
+                        stroke="#07060b"
+                        strokeWidth={4}
+                        paintOrder="stroke"
+                        opacity={dim && !highlighted ? 0.25 : 0.95}
                         style={{ fontSize: 12 }}
                       >
                         {bit}
@@ -431,6 +554,28 @@ export function HuffmanBuilder({ freqs, codes }: HuffmanBuilderProps) {
               ◎
             </CanvasButton>
           </div>
+          {step >= total && total > 0 && (
+            <div
+              className="animate-rise absolute left-3 top-3 flex flex-wrap gap-1 rounded-full border border-white/10 bg-ink/80 p-1 backdrop-blur"
+              role="group"
+              aria-label="Forma del árbol"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              {VIEWS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => changeView(option.id)}
+                  aria-pressed={view === option.id}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    view === option.id ? 'bg-brand text-white' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
           <p className="pointer-events-none absolute bottom-2 left-3 font-mono text-[0.6rem] uppercase tracking-[0.15em] text-zinc-600">
             Arrastra para mover · Ctrl + rueda para zoom · toca un nodo
           </p>
@@ -476,6 +621,10 @@ export function HuffmanBuilder({ freqs, codes }: HuffmanBuilderProps) {
               longitudes y reasigna los códigos en orden canónico.
               {overLimit > 0 &&
                 ` ${overLimit} símbolos quedaron a más de ${MAX_CODE_LENGTH} niveles; el formato los ajusta a ${MAX_CODE_LENGTH} bits.`}
+              <span className="mt-2 block text-zinc-300">
+                Cambia la forma con los botones de arriba: <em>Radial</em> lo muestra completo en
+                círculo y <em>Por profundidad</em> deja cada hoja en el nivel de su código.
+              </span>
             </p>
           )}
         </div>
