@@ -40,8 +40,11 @@ describe('BitWriter y BitReader (MSB-first)', () => {
     writer.writeBits(5, 3);
     const buffer = writer.flush();
 
+    expect(buffer.length).toBe(1);
+
     const reader = new BitReader(buffer);
     expect(reader.readBits(3)).toBe(5);
+    expect(reader.readBits(5)).toBe(0); // padding de 0s hasta completar el byte
 
     expect(() => reader.readBits(1)).toThrow();
   });
